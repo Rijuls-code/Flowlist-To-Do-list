@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FlowList — To‑Do</title>
+  <meta name="description" content="Aesthetic, animated, responsive to‑do app with filters, drag-and-drop, and localStorage." />
+  <style>
+    /* 
+       Design Tokens
+    */
+    :root {
+      --bg: #0b0f14;
+      --bg-2: #0f141b;
+      --card: rgba(255,255,255,0.06);
+      --text: #e6edf3;
+      --muted: #a6b3c2;
+      --accent: #7aa2ff;
+      --accent-2: #ff6aa2;
+      --ok: #58d6a3;
+      --warn: #ffb454;
+      --bad: #ff6b6b;
+
+      --ring: color-mix(in oklab, var(--accent) 60%, transparent);
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --blur: 18px;
+
+      --radius: 14px;
+      --r-sm: 10px;
+      --r-xs: 8px;
+
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 18px;
+      --space-5: 24px;
+      --space-6: 32px;
+
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+      --task-h: 66px;
+    }
+
+    [data-theme="light"] {
+      --bg: #f6f7fb;
+      --bg-2: #ffffff;
+      --card: rgba(10, 15, 20, 0.06);
+      --text: #0b0f14;
+      --muted: #495466;
+      --shadow: 0 8px 24px rgba(10,10,10,0.08);
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light dark;
+      }
+    }
+    /* Dropdown */
+select {
+  background-color: #1e1e1e;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 10px 40px 10px 12px; 
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;        
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  position: relative;
+  transition: border 0.3s, box-shadow 0.3s;
+}
+
+/* Hover + focus effects */
+select:hover {
+  border-color: #666;
+}
+select:focus {
+  border-color: #09f;
+  box-shadow: 0 0 6px #09f;
+}
+
+/* Dropdown arrow */
+select::after {
+  content: "▼";
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #aaa;
+  pointer-events: none;
+  font-size: 12px;
+}
+
+/* Options */
+select option {
+  background-color: #1e1e1e;
+  color: #fff;
+  padding: 10px;
+}
+select option:hover {
+  background-color: #333;
+}
+
+
+    /* 
+       Global
+    */
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      background: radial-gradient(1200px 1200px at 20% -10%, #2a3652 0%, transparent 60%),
+                  radial-gradient(1200px 1200px at 120% 20%, #3e2e49 0%, transparent 55%),
+                  var(--bg);
+      font-family: var(--font);
+      color: var(--text);
+    }
+    body {
+      margin: 0;
+      line-height: 1.25;
+      overflow-x: hidden;
+    }
+
+    /* Floating gradient blobs */
+    .bg-blob, .bg-blob::after {
+      position: fixed;
+      inset: auto;
+      width: 420px;
+      height: 420px;
+      filter: blur(60px);
+      z-index: -1;
+      opacity: 0.35;
+      mix-blend-mode: screen;
+      pointer-events: none;
+    }
+    .bg-blob {
+      background: radial-gradient(circle at 30% 30%, var(--accent), transparent 60%);
+      bottom: -80px; left: -60px;
+      animation: float 16s ease-in-out infinite;
+    }
+    .bg-blob::after {
+      content: "";
+      background: radial-gradient(circle at 70% 70%, var(--accent-2), transparent 60%);
+      top: -30px; right: -40px;
+      animation: float 22s ease-in-out infinite reverse;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0) translateX(0) scale(1); }
+      50% { transform: translateY(-20px) translateX(10px) scale(1.06); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .bg-blob, .bg-blob::after { animation: none; }
+    }
+
+    /* Layout */
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 56px;
+    }
+
+    header.appbar {
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(10px);
+      background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2) 35%, transparent), transparent);
+      z-index: 3;
+    }
+    .appbar-inner {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 8px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    .brand .logo {
+      width: 34px; height: 34px;
+      display: grid; place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 6px 18px color-mix(in oklab, var(--accent) 30%, transparent);
+      color: white;
+    }
+    .brand .title {
+      font-size: clamp(18px, 2.4vw, 22px);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      border: 0;
+      border-radius: var(--r-xs);
+      background: color-mix(in oklab, var(--card) 80%, transparent);
+      color: var(--text);
+      padding: 10px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: transform .12s ease, background .18s ease, box-shadow .18s ease;
+      box-shadow: 0 0 0 0 transparent;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn.primary {
+      background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 65%, transparent), color-mix(in oklab, var(--accent-2) 50%, transparent));
+      color: #fff;
+      box-shadow: 0 8px 22px color-mix(in oklab, var(--accent) 30%, transparent);
+    }
+
+    .panel {
+      background: color-mix(in oklab, var(--bg-2) 70%, transparent);
+      border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(var(--blur));
+    }
+
+    /* Controls area */
+    .controls {
+      margin-top: 14px;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    @media (min-width: 780px) {
+      .controls {
+        grid-template-columns: 1.1fr .8fr auto;
+        align-items: center;
+      }
+    }
+
+    .searchbar {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--r-sm);
+      border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+    }
+    .searchbar input {
+      background: transparent; border: 0; color: var(--text); outline: none; font-size: 14px;
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .seg {
+      display: inline-flex;
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
+      gap: 4px;
+    }
+    .seg button {
+      background: transparent; border: 0; color: var(--muted);
+      padding: 8px 12px; border-radius: 999px; cursor: pointer; transition: background .2s ease, color .2s ease;
+    }
+    .seg button.active {
+      background: color-mix(in oklab, var(--bg-2) 70%, transparent);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 10%, transparent);
+    }
+
+    .sort {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+    }
+    .sort select {
+      background: transparent; border: 0; color: var(--text); outline: none; font-size: 14px;
+    }
+
+    /* Category chips */
+    .chips {
+      margin-top: 8px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 8px;
+      border-top: 1px dashed color-mix(in oklab, var(--text) 10%, transparent);
+    }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      color: var(--muted);
+      cursor: pointer;
+      transition: transform .12s ease, background .2s ease, color .2s ease;
+    }
+    .chip.active {
+      color: var(--text);
+      background: color-mix(in oklab, var(--bg-2) 70%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 10%, transparent);
+    }
+    .chip:hover { transform: translateY(-1px); }
+
+    /* Input drawer */
+    .composer {
+      margin-top: 16px;
+      padding: 14px;
+      display: grid; gap: 12px;
+    }
+    @media (min-width: 820px) {
+      .composer-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr .8fr .8fr auto;
+        gap: 10px;
+      }
+    }
+    .field {
+      display: grid; gap: 6px;
+    }
+    .label { color: var(--muted); font-size: 12px; }
+    .input, .select, .textarea, .date {
+      width: 100%;
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .textarea { min-height: 42px; resize: vertical; }
+    .input:focus, .select:focus, .textarea:focus, .date:focus {
+      box-shadow: 0 0 0 4px var(--ring);
+      border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+    }
+
+    .add-row {
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+    }
+
+    /* Task list */
+    .list {
+      margin-top: 16px;
+      padding: 10px;
+    }
+    ul.tasks {
+      list-style: none; padding: 0; margin: 0; display: grid; gap: 10px;
+    }
+
+    li.task {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: var(--task-h);
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid color-mix(in oklab, var(--text) 10%, transparent);
+      background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2) 80%, transparent), color-mix(in oklab, var(--card) 60%, transparent));
+      box-shadow: var(--shadow);
+      transform-origin: 50% 50%;
+      transition: transform .16s ease, background .2s ease, border-color .2s ease;
+    }
+    li.task:hover { transform: translateY(-2px); }
+    li.task.dragging {
+      opacity: 0.85;
+      transform: rotate(1deg) scale(1.01);
+      border-style: dashed;
+    }
+    .task .left {
+      display: grid; place-items: center;
+    }
+    .task .mid {
+      display: grid; gap: 6px;
+      min-width: 0;
+    }
+    .task h4 {
+      margin: 0; font-size: 15px; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .task .meta {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 12px;
+    }
+    .tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      border: 1px solid color-mix(in oklab, var(--text) 10%, transparent);
+    }
+    .tag.prio-low { color: var(--ok); }
+    .tag.prio-med { color: var(--warn); }
+    .tag.prio-high { color: var(--bad); }
+
+    .task .right { display: inline-flex; align-items: center; gap: 6px; }
+
+    .iconbtn {
+      width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px;
+      border: 1px solid color-mix(in oklab, var(--text) 10%, transparent);
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      color: var(--text); cursor: pointer;
+      transition: transform .12s ease, background .2s ease, color .2s ease;
+    }
+    .iconbtn:hover { transform: translateY(-1px); }
+    .iconbtn.del:hover { color: var(--bad); }
+    .iconbtn.edit:hover { color: var(--accent); }
+
+    /* Animated checkbox */
+    .checkbox {
+      --size: 22px;
+      width: var(--size); height: var(--size);
+      border-radius: 7px;
+      border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+      background: color-mix(in oklab, var(--card) 60%, transparent);
+      display: grid; place-items: center;
+      cursor: pointer; position: relative; overflow: hidden;
+      transition: border-color .16s ease, background .2s ease;
+    }
+    .checkbox input { opacity: 0; position: absolute; inset: 0; cursor: pointer; }
+    .checkbox svg {
+      width: 16px; height: 16px; opacity: 0; transform: scale(.6);
+      transition: transform .18s ease, opacity .18s ease;
+      color: #fff;
+    }
+    .checkbox.checked {
+      background: linear-gradient(135deg, var(--ok), color-mix(in oklab, var(--ok) 70%, var(--accent)));
+      border-color: transparent;
+      box-shadow: 0 8px 20px color-mix(in oklab, var(--ok) 22%, transparent);
+    }
+    .checkbox.checked svg { opacity: 1; transform: scale(1); }
+
+    .task.completed {
+      opacity: .7;
+    }
+    .task.completed h4 {
+      text-decoration: line-through;
+      text-decoration-thickness: 2px;
+      text-decoration-color: color-mix(in oklab, var(--muted) 60%, transparent);
+    }
+
+    /* Empty state */
+    .empty {
+      display: grid; place-items: center; gap: 10px;
+      padding: 24px; color: var(--muted); text-align: center;
+    }
+    .empty .big {
+      font-size: 36px;
+      animation: bounce 1.6s ease-in-out infinite;
+    }
+    @keyframes bounce {
+      0%,100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .empty .big { animation: none; }
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: color-mix(in oklab, var(--bg) 75%, transparent);
+      display: none; align-items: center; justify-content: center;
+      z-index: 10;
+    }
+    .modal {
+      width: min(720px, 92vw);
+      background: color-mix(in oklab, var(--bg-2) 70%, transparent);
+      border: 1px solid color-mix(in oklab, var(--text) 10%, transparent);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      transform: translateY(8px) scale(.98);
+      opacity: 0;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal-backdrop.show .modal {
+      animation: pop .18s ease forwards;
+    }
+    @keyframes pop {
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    /* Enter/exit list animations */
+    .task.enter {
+      animation: enter .22s ease-out both;
+    }
+    @keyframes enter {
+      from { transform: translateY(10px) scale(.98); opacity: 0; }
+      to   { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .task.exit {
+      animation: exit .18s ease-in both;
+    }
+    @keyframes exit {
+      to { transform: translateX(8px) translateY(-6px) rotate(1deg); opacity: 0; }
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      opacity: .8;
+    }
+
+    /* Fab for mobile quick add */
+    .fab {
+      position: fixed; right: 18px; bottom: 18px; z-index: 4;
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    @media (min-width: 880px) {
+      .fab { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-blob"></div>
+
+  <header class="appbar">
+    <div class="wrap appbar-inner">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M4 12C4 7.582 7.582 4 12 4s8 3.582 8 8-3.582 8-8 8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <path d="M12 8v8M8 12h8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="title">FlowList</div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="themeToggle" aria-label="Toggle theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path id="icon-theme" d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.95-6.95-1.41 1.41M7.46 16.54l-1.41 1.41m12.9 0-1.41-1.41M7.46 7.46 6.05 6.05" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Theme
+        </button>
+        <button class="btn primary" id="openComposerTop">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Add Task
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel controls" aria-label="Filters and search">
+      <div class="searchbar" role="search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m21 21-4.3-4.3M5 11a6 6 0 1 0 12 0 6 6 0 0 0-12 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input id="search" type="search" placeholder="Search tasks, notes, categories..." aria-label="Search tasks" />
+      </div>
+
+      <div class="filters">
+        <div class="seg" aria-label="Status filter">
+          <button data-status="all" class="active" aria-pressed="true">All</button>
+          <button data-status="active" aria-pressed="false">Active</button>
+          <button data-status="completed" aria-pressed="false">Completed</button>
+        </div>
+      </div>
+
+      <div class="sort" aria-label="Sort">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M8 9l4-4 4 4M16 15l-4 4-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <select id="sortSelect" aria-label="Sort tasks">
+          <option value="createdDesc">Newest</option>
+          <option value="createdAsc">Oldest</option>
+          <option value="dueAsc">Due date ↑</option>
+          <option value="dueDesc">Due date ↓</option>
+          <option value="prioDesc">Priority High→Low</option>
+          <option value="prioAsc">Priority Low→High</option>
+          <option value="manual">Manual order</option>
+        </select>
+      </div>
+
+      <div class="chips" id="categoryChips" aria-label="Category chips"></div>
+    </section>
+
+    <section class="panel composer" aria-label="Add task">
+      <div class="composer-grid">
+        <div class="field">
+          <label class="label" for="title">Title</label>
+          <input class="input" id="title" placeholder="e.g., Prep for client review" />
+        </div>
+        <div class="field">
+          <label class="label" for="category">Category</label>
+          <input class="input" id="category" placeholder="e.g., Work, Personal" />
+        </div>
+        <div class="field">
+          <label class="label" for="due">Due date</label>
+          <input class="date" type="date" id="due"/>
+        </div>
+        <div class="field">
+          <label class="label" for="priority">Priority</label>
+          <select class="select" id="priority">
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="notes">Notes</label>
+          <input class="input" id="notes" placeholder="Optional notes…" />
+        </div>
+      </div>
+      <div class="add-row">
+        <div aria-live="polite" id="err" style="min-height:1em;color:var(--bad);font-size:12px;"></div>
+        <button class="btn primary" id="addBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Add Task
+        </button>
+      </div>
+    </section>
+
+    <section class="panel list" aria-label="Task list">
+      <ul class="tasks" id="tasks"></ul>
+      <div class="empty" id="empty" hidden>
+        <div class="big" aria-hidden="true">✨</div>
+        <div>No tasks yet. Add your first one to get into flow.</div>
+      </div>
+    </section>
+
+    <footer>FlowList — stay in flow. Drag to reorder. Click a task to edit.</footer>
+  </main>
+
+  <!-- Mobile FAB -->
+  <div class="fab">
+    <button class="btn primary" id="openComposerFab" aria-label="Quick add task">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Add
+    </button>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="modal">
+      <h3 id="editTitle" style="margin:6px 6px 12px;">Edit Task</h3>
+      <div class="composer-grid">
+        <div class="field">
+          <label class="label" for="e_title">Title</label>
+          <input class="input" id="e_title" />
+        </div>
+        <div class="field">
+          <label class="label" for="e_category">Category</label>
+          <input class="input" id="e_category" />
+        </div>
+        <div class="field">
+          <label class="label" for="e_due">Due date</label>
+          <input class="date" type="date" id="e_due"/>
+        </div>
+        <div class="field">
+          <label class="label" for="e_priority">Priority</label>
+          <select class="select" id="e_priority">
+            <option>Low</option>
+            <option>Medium</option>
+            <option>High</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="e_notes">Notes</label>
+          <input class="input" id="e_notes" />
+        </div>
+      </div>
+      <div class="add-row" style="margin-top:12px;">
+        <button class="btn" id="closeEdit">Cancel</button>
+        <button class="btn primary" id="saveEdit">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, r = document) => r.querySelector(s);
+    const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+    const storeKey = 'flowlist.tasks.v1';
+    const settingsKey = 'flowlist.settings.v1';
+
+    const state = {
+      tasks: [],
+      filter: {
+        status: 'all',
+        query: '',
+        category: null,
+        sort: 'createdDesc',
+      },
+      editingId: null
+    };
+
+    const el = {
+      tasks: $('#tasks'),
+      empty: $('#empty'),
+      search: $('#search'),
+      seg: $('.seg'),
+      chips: $('#categoryChips'),
+      sort: $('#sortSelect'),
+      add: $('#addBtn'),
+      err: $('#err'),
+      inputs: {
+        title: $('#title'),
+        category: $('#category'),
+        due: $('#due'),
+        priority: $('#priority'),
+        notes: $('#notes'),
+      },
+      themeToggle: $('#themeToggle'),
+      openComposerTop: $('#openComposerTop'),
+      openComposerFab: $('#openComposerFab'),
+      modalBackdrop: $('#modalBackdrop'),
+      e_title: $('#e_title'),
+      e_category: $('#e_category'),
+      e_due: $('#e_due'),
+      e_priority: $('#e_priority'),
+      e_notes: $('#e_notes'),
+      closeEdit: $('#closeEdit'),
+      saveEdit: $('#saveEdit')
+    };
+
+    /* 
+       Persistence
+    */
+    function save() {
+      localStorage.setItem(storeKey, JSON.stringify(state.tasks));
+      localStorage.setItem(settingsKey, JSON.stringify({
+        theme: document.body.getAttribute('data-theme') || null,
+        filter: state.filter
+      }));
+    }
+    function load() {
+      const saved = localStorage.getItem(storeKey);
+      state.tasks = saved ? JSON.parse(saved) : sampleTasks();
+      const s = localStorage.getItem(settingsKey);
+      if (s) {
+        const { theme, filter } = JSON.parse(s);
+        if (theme) document.body.setAttribute('data-theme', theme);
+        if (filter) Object.assign(state.filter, filter);
+      }
+    }
+
+    function sampleTasks() {
+      const now = Date.now();
+      const t = (title, category, priority, days, notes = '') => ({
+        id: cryptoRandomId(),
+        title, category, priority,
+        notes,
+        dueDate: days ? new Date(now + days*86400000).toISOString().slice(0,10) : '',
+        createdAt: now + Math.floor(Math.random()*100000),
+        completed: false,
+        order: now + Math.random()
+      });
+      return [
+        t('Wireframe landing page', 'Work', 'High', 2, 'Hero, pricing, CTA'),
+        t('Buy groceries', 'Personal', 'Medium', 1, 'Veggies, paneer, masala'),
+        t('Book dentist appointment', 'Health', 'Low', 7),
+        t('Resume update', 'Career', 'High', 4),
+        t('Yoga session', 'Health', 'Low', 0, 'Evening wind-down')
+      ];
+    }
+
+    function cryptoRandomId() {
+      if (window.crypto?.randomUUID) return crypto.randomUUID();
+      return 'id-' + Math.random().toString(36).slice(2, 11);
+    }
+
+    /* 
+       Rendering
+    */
+    function render() {
+      const filtered = applyFilters();
+
+      // Empty state
+      el.empty.hidden = filtered.length > 0;
+
+      // Build category chips based on all tasks
+      buildCategoryChips();
+
+      // Render list
+      el.tasks.innerHTML = '';
+      for (const task of filtered) {
+        el.tasks.appendChild(taskItem(task));
+      }
+      // Enable drag-and-drop after DOM render
+      setupDnd();
+      // Reflect segmented control
+      $$('.seg button').forEach(b => b.classList.toggle('active', b.dataset.status === state.filter.status));
+      // Reflect sort select
+      el.sort.value = state.filter.sort;
+    }
+
+    function applyFilters() {
+      let items = [...state.tasks];
+
+      // Search
+      const q = state.filter.query.trim().toLowerCase();
+      if (q) {
+        items = items.filter(t =>
+          t.title.toLowerCase().includes(q) ||
+          t.notes.toLowerCase().includes(q) ||
+          (t.category || '').toLowerCase().includes(q)
+        );
+      }
+
+      // Status
+      if (state.filter.status === 'active') items = items.filter(t => !t.completed);
+      if (state.filter.status === 'completed') items = items.filter(t => t.completed);
+
+      // Category
+      if (state.filter.category) {
+        items = items.filter(t => (t.category || '').toLowerCase() === state.filter.category.toLowerCase());
+      }
+
+      // Sort
+      const prioRank = v => ({ Low: 1, Medium: 2, High: 3 })[v] || 0;
+      switch (state.filter.sort) {
+        case 'createdAsc':
+          items.sort((a,b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)); break;
+        case 'createdDesc':
+          items.sort((a,b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)); break;
+        case 'dueAsc':
+          items.sort((a,b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31')); break;
+        case 'dueDesc':
+          items.sort((a,b) => (b.dueDate || '').localeCompare(a.dueDate || '')); break;
+        case 'prioAsc':
+          items.sort((a,b) => prioRank(a.priority) - prioRank(b.priority)); break;
+        case 'prioDesc':
+          items.sort((a,b) => prioRank(b.priority) - prioRank(a.priority)); break;
+        case 'manual':
+          items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0)); break;
+      }
+      return items;
+    }
+
+    function buildCategoryChips() {
+      const cats = Array.from(new Set(state.tasks
+        .map(t => (t.category || '').trim())
+        .filter(Boolean)
+        .map(c => c.toLowerCase())
+      )).sort();
+      el.chips.innerHTML = '';
+      if (!cats.length) return;
+      const make = (name) => {
+        const chip = document.createElement('button');
+        chip.className = 'chip' + (state.filter.category?.toLowerCase() === name ? ' active' : '');
+        chip.textContent = name;
+        chip.addEventListener('click', () => {
+          state.filter.category = (state.filter.category?.toLowerCase() === name) ? null : name;
+          save(); render();
+        });
+        return chip;
+      };
+      el.chips.append(make('all'));
+      // Make 'all' behave like clearing category
+      el.chips.firstChild.addEventListener('click', () => { state.filter.category = null; save(); render(); });
+
+      cats.forEach(c => el.chips.append(make(c)));
+    }
+
+    function taskItem(task) {
+      const li = document.createElement('li');
+      li.className = 'task enter' + (task.completed ? ' completed' : '');
+      li.setAttribute('data-id', task.id);
+      li.setAttribute('draggable', 'true');
+      li.setAttribute('role', 'listitem');
+
+      // Left: checkbox
+      const left = document.createElement('div');
+      left.className = 'left';
+      const checkbox = document.createElement('label');
+      checkbox.className = 'checkbox' + (task.completed ? ' checked' : '');
+      checkbox.title = 'Complete';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = task.completed;
+      cb.addEventListener('change', () => {
+        task.completed = cb.checked;
+        checkbox.classList.toggle('checked', cb.checked);
+        li.classList.toggle('completed', cb.checked);
+        save(); // Keep ordering same; no rerender to preserve animation
+      });
+      const checkIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      checkIcon.setAttribute('viewBox', '0 0 24 24');
+      checkIcon.innerHTML = '<path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>';
+      checkbox.append(cb, checkIcon);
+      left.appendChild(checkbox);
+
+      // Mid: title + meta
+      const mid = document.createElement('div');
+      mid.className = 'mid';
+      const title = document.createElement('h4');
+      title.textContent = task.title;
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      if (task.category) {
+        const cat = document.createElement('span');
+        cat.className = 'tag';
+        cat.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="opacity:.8"><path d="M4 7a3 3 0 0 1 3-3h4.586a2 2 0 0 1 1.414.586l6.414 6.414a2 2 0 0 1 0 2.828l-4.172 4.172a2 2 0 0 1-2.828 0L5.586 10.414A2 2 0 0 1 5 9V7Z" stroke="currentColor" stroke-width="1.5"/></svg> ${escapeHtml(task.category)}`;
+        meta.appendChild(cat);
+      }
+      const pr = document.createElement('span');
+      pr.className = 'tag ' + (task.priority === 'High' ? 'prio-high' : task.priority === 'Medium' ? 'prio-med' : 'prio-low');
+      pr.textContent = task.priority + ' priority';
+      meta.appendChild(pr);
+      if (task.dueDate) {
+        const due = document.createElement('span');
+        const overdue = new Date(task.dueDate) < new Date() && !task.completed;
+        due.className = 'tag';
+        due.style.color = overdue ? 'var(--bad)' : 'inherit';
+        due.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="opacity:.8"><path d="M7 2v4M17 2v4M3.5 9h17M6 12h6M6 16h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> ${task.dueDate}`;
+        meta.appendChild(due);
+      }
+      if (task.notes) {
+        const n = document.createElement('span');
+        n.className = 'tag';
+        n.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="opacity:.8"><path d="M4 5a2 2 0 0 1 2-2h7.586a2 2 0 0 1 1.414.586l2.414 2.414A2 2 0 0 1 18 7.414V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5Z" stroke="currentColor" stroke-width="1.5"/></svg> ${escapeHtml(task.notes)}`;
+        meta.appendChild(n);
+      }
+      mid.append(title, meta);
+
+      // Right: edit/delete
+      const right = document.createElement('div');
+      right.className = 'right';
+      const edit = document.createElement('button');
+      edit.className = 'iconbtn edit';
+      edit.title = 'Edit';
+      edit.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEdit(task.id);
+      });
+      const del = document.createElement('button');
+      del.className = 'iconbtn del';
+      del.title = 'Delete';
+      del.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeTask(task.id, li);
+      });
+      right.append(edit, del);
+
+      // Click row to edit
+      li.addEventListener('click', (e) => {
+        if (e.target.closest('.iconbtn') || e.target.closest('.checkbox')) return;
+        openEdit(task.id);
+      });
+
+      li.append(left, mid, right);
+      li.addEventListener('animationend', () => {
+        li.classList.remove('enter');
+        if (li.classList.contains('exit')) li.remove();
+      });
+      return li;
+    }
+
+    function removeTask(id, liEl) {
+      liEl.classList.add('exit');
+      setTimeout(() => {
+        state.tasks = state.tasks.filter(t => t.id !== id);
+        save();
+        render();
+      }, 160);
+    }
+
+    /* ------------------------
+       Drag and Drop
+    -------------------------*/
+    function setupDnd() {
+      const items = $$('#tasks .task');
+      items.forEach(item => {
+        item.addEventListener('dragstart', dragStart);
+        item.addEventListener('dragend', dragEnd);
+      });
+      el.tasks.addEventListener('dragover', dragOver);
+      el.tasks.addEventListener('drop', drop);
+    }
+
+    let dragId = null;
+    function dragStart(e) {
+      this.classList.add('dragging');
+      dragId = this.getAttribute('data-id');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragId); } catch {}
+    }
+    function dragEnd() {
+      this.classList.remove('dragging');
+      dragId = null;
+    }
+    function dragOver(e) {
+      e.preventDefault();
+      const after = getDragAfterElement(el.tasks, e.clientY);
+      const dragging = $('.task.dragging');
+      if (!dragging) return;
+      if (after == null) {
+        el.tasks.appendChild(dragging);
+      } else {
+        el.tasks.insertBefore(dragging, after);
+      }
+    }
+    function drop(e) {
+      e.preventDefault();
+      // Update order if manual sort selected, else switch to manual
+      if (state.filter.sort !== 'manual') {
+        state.filter.sort = 'manual';
+      }
+      const ids = $$('#tasks .task').map(li => li.getAttribute('data-id'));
+      const idToIndex = new Map(ids.map((id, i) => [id, i]));
+      state.tasks.forEach(t => t.order = idToIndex.get(t.id) ?? t.order);
+      save();
+      render();
+    }
+    function getDragAfterElement(container, y) {
+      const els = [...container.querySelectorAll('.task:not(.dragging)')];
+      return els.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset, element: child };
+        } else {
+          return closest;
+        }
+      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    /*
+       Edit Modal
+    */
+    function openEdit(id) {
+      state.editingId = id;
+      const t = state.tasks.find(x => x.id === id);
+      if (!t) return;
+      el.e_title.value = t.title;
+      el.e_category.value = t.category || '';
+      el.e_due.value = t.dueDate || '';
+      el.e_priority.value = t.priority || 'Medium';
+      el.e_notes.value = t.notes || '';
+      showModal(true);
+      setTimeout(() => el.e_title.focus(), 0);
+    }
+    function showModal(v) {
+      el.modalBackdrop.classList.toggle('show', v);
+    }
+
+    /*
+       Events
+   */
+    // Add task
+    el.add.addEventListener('click', addTask);
+    el.openComposerTop.addEventListener('click', () => el.inputs.title.focus());
+    el.openComposerFab.addEventListener('click', () => el.inputs.title.focus());
+    function addTask() {
+      const title = el.inputs.title.value.trim();
+      if (!title) {
+        el.err.textContent = 'Title is required.';
+        el.inputs.title.focus();
+        return;
+      }
+      const task = {
+        id: cryptoRandomId(),
+        title,
+        category: el.inputs.category.value.trim(),
+        dueDate: el.inputs.due.value || '',
+        priority: el.inputs.priority.value || 'Medium',
+        notes: el.inputs.notes.value.trim(),
+        createdAt: Date.now(),
+        completed: false,
+        order: (state.tasks.reduce((m,t)=>Math.max(m, t.order ?? 0), -1) + 1)
+      };
+      state.tasks.unshift(task);
+      // Clear inputs
+      el.inputs.title.value = '';
+      el.inputs.category.value = '';
+      el.inputs.due.value = '';
+      el.inputs.priority.value = 'Medium';
+      el.inputs.notes.value = '';
+      el.err.textContent = '';
+
+      save();
+      // Render new item at top with enter animation
+      const li = taskItem(task);
+      el.tasks.prepend(li);
+      el.empty.hidden = true;
+      setupDnd();
+    }
+
+    // Search
+    el.search.addEventListener('input', () => {
+      state.filter.query = el.search.value;
+      render();
+    });
+
+    // Status segmented control
+    $$('.seg button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.filter.status = btn.dataset.status;
+        save();
+        render();
+      });
+    });
+
+    // Sort
+    el.sort.addEventListener('change', () => {
+      state.filter.sort = el.sort.value;
+      save();
+      render();
+    });
+
+    // Theme
+    el.themeToggle.addEventListener('click', () => {
+      const next = (document.body.getAttribute('data-theme') === 'light') ? null : 'light';
+      if (next) document.body.setAttribute('data-theme', next);
+      else document.body.removeAttribute('data-theme');
+      save();
+    });
+
+    // Modal actions
+    el.closeEdit.addEventListener('click', () => showModal(false));
+    el.modalBackdrop.addEventListener('click', (e) => {
+      if (e.target === el.modalBackdrop) showModal(false);
+    });
+    el.saveEdit.addEventListener('click', () => {
+      const id = state.editingId;
+      const t = state.tasks.find(x => x.id === id);
+      if (!t) return showModal(false);
+      const title = el.e_title.value.trim();
+      if (!title) { alert('Title is required.'); return; }
+      t.title = title;
+      t.category = el.e_category.value.trim();
+      t.dueDate = el.e_due.value || '';
+      t.priority = el.e_priority.value || 'Medium';
+      t.notes = el.e_notes.value.trim();
+      save();
+      showModal(false);
+      render();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') showModal(false);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') el.search.focus();
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); el.inputs.title.focus(); }
+    });
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+    }
+
+    /* 
+       Init
+    */
+    load();
+    // Restore UI filter elements
+    el.search.value = state.filter.query;
+    render();
+  </script>
+</body>
+</html>                                                                      
