@@ -30,7 +30,7 @@ It helps users manage daily tasks with smooth animations, a clean interface, and
 1. Clone this repository:
 
    ```bash
-   git clone https://github.com/your-username/flowlist.git
+   git clone https://github.com/Rijuls-code/Flowlist-To-Do-list
    ```
 2. Open `index.html` in your browser.
 3. Start adding your tasks ✅
